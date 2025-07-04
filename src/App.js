@@ -51,15 +51,15 @@ const tempWatchedData = [
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
 
-const KEY = "f84fc31d";
+const KEY = "c8bca4f7";
 
 export default function App() {
   const [watched, setWatched] = useState([]);
   const [movies, setMovies] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("inception");
-  const [selectedId, setSelectedId] = useState("tt1375666");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState("");
 
   function handleSelectMovie(id) {
     setSelectedId((selectedId) => (id === selectedId ? null : id));
@@ -73,14 +73,17 @@ export default function App() {
   function handleDeleteWatched(id) {
     setWatched((watched) => watched.filter((movie) => movie.imdbID !== id));
   }
+
   useEffect(
     function () {
-      setIsLoading(true);
-      setError("");
+      const controller = new AbortController();
       async function fetchMovies() {
         try {
+          setIsLoading(true);
+          setError("");
           const response = await fetch(
-            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`
+            `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }
           );
           if (!response.ok)
             throw new Error("something went wrong with fetching movies");
@@ -90,9 +93,12 @@ export default function App() {
           if (data.Response === "False") throw new Error("movie not found!😵‍💫 ");
 
           setMovies(data.Search);
+          setError("");
         } catch (err) {
-          console.error(err.message);
           setError(err.message);
+          if (err.name !== "AbortError") {
+            setError(err.message);
+          }
         } finally {
           setIsLoading(false);
         }
@@ -102,7 +108,11 @@ export default function App() {
         setError("");
         return;
       }
+      handleCloseMovie();
       fetchMovies();
+      return function () {
+        controller.abort();
+      };
     },
     [query]
   );
@@ -146,7 +156,6 @@ export default function App() {
 
 function Loader() {
   return <div className="loader"></div>;
-  // return <p className="loader">LOADING...</p>;
 }
 function ErrorMessage({ message }) {
   return (
@@ -216,6 +225,7 @@ function WatchedSummary({ watched }) {
   const avgImdbRating = average(watched.map((movie) => movie.imdbRating));
   const avgUserRating = average(watched.map((movie) => movie.userRating));
   const avgRuntime = average(watched.map((movie) => movie.runtime));
+
   return (
     <div className="summary">
       <h2>Movies you watched</h2>
@@ -297,9 +307,21 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
     };
 
     onAddWatched(newWatchedMovie);
-
     onCloseMovie();
   }
+
+  useEffect(function () {
+    function callBack(e) {
+      if (e.code === "Escape") {
+        onCloseMovie();
+      }
+    }
+    document.addEventListener("keydown", callBack);
+    return function () {
+      document.removeEventListener("keydown", callBack);
+    };
+  }, []);
+
   useEffect(
     function () {
       async function getMovieDetail() {
@@ -314,6 +336,16 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
       getMovieDetail();
     },
     [selectedId]
+  );
+  useEffect(
+    function () {
+      if (!title) return;
+      document.title = `Movie | ${title}`;
+      return function () {
+        document.title = "usePopcorn";
+      };
+    },
+    [title]
   );
   return (
     <div className="details">
@@ -378,7 +410,11 @@ function WatchedMoviesList({ watched, onDeleteMovie }) {
   return (
     <ul className="list">
       {watched.map((movie) => (
-        <WatchedMovies movie={movie} onDeleteMovie={onDeleteMovie} />
+        <WatchedMovies
+          movie={movie}
+          onDeleteMovie={onDeleteMovie}
+          key={movie}
+        />
       ))}
     </ul>
   );
